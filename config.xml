@@ -1,0 +1,7 @@
+<config>
+    <youtube_api_data>
+        <developer_key>[Add Youtube API developer key here]</developer_key>
+    </youtube_api_data>
+    <default_youtube_channel_user>thedicetower</default_youtube_channel_user>
+    <default_geeklistid>235411</default_geeklistid>
+</config>
