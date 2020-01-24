@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# Copyright (c) 2017, Andrei Buhaiu
+# Copyright (c) 2020, Andrei Buhaiu
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
