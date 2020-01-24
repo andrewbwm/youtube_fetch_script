@@ -32,6 +32,7 @@ from parse import *
 from datetime import datetime, date, time
 import subprocess
 import time
+import re
 
 
 p_apikey = subprocess.Popen(["xmlstarlet", "sel", "-T", "-t",
@@ -83,7 +84,8 @@ def GetYoutubeUploadsPlaylistByChannelId(channelId):
   return uploadsPlaylist
 
 
-def GetYoutubeVideosFromPlaylist(playlistId, headerEntriesMax):
+def GetYoutubeVideosFromPlaylist(playlistId, headerEntriesMax,
+    stripTitle = False):
 
     results = youtube.playlistItems().list(
             part = "contentDetails",
@@ -107,6 +109,10 @@ def GetYoutubeVideosFromPlaylist(playlistId, headerEntriesMax):
                 id = videoId,
             ).execute()
         title = unicode(upload["items"][0]["snippet"]["title"]).encode("utf8")
+        if stripTitle :
+            match = re.match(r'(Daily Game Unboxing *- *)(.*)$', title)
+            if match :
+                title = match.group(2)
         date = upload["items"][0]["snippet"]["publishedAt"]
         videoDate = parse('{:ti}', date)[0]
         key = (title, videoId)
@@ -154,6 +160,7 @@ if __name__ == "__main__":
     argparser.add_argument("-u", help="Youtube user",
         default = p_user.communicate()[0][:-1])
     argparser.add_argument("-c", help="Youtube channel id", default="")
+    argparser.add_argument("-p", help="Youtube playlist id", default="")
 
     argparser.add_argument("-g", help="boardgamegeek geeklist id",
             default = p_geeklistid.communicate()[0][:-1])
@@ -162,34 +169,64 @@ if __name__ == "__main__":
     argparser.add_argument("--append",
         help="Append instead of replacing entries",
         action='store_true')
+    argparser.add_argument("-s",
+        help="Strip title",
+        action='store_true')
+    argparser.add_argument("--autoretry",
+        help="Auto retry fetching geeklist when it fails",
+        action='store_true')
     args = argparser.parse_args()
     channelId = args.c
     userId = args.u
+    playlistId = args.p
     geeklistId = args.g
 
     print args
-    if not channelId:
+    if playlistId:
         try:
-            uploadsPlaylist = GetYoutubeUploadsPlaylistByUsername(userId)
+            (nr_entries, header_entries) = GetYoutubeVideosFromPlaylist(playlistId,
+                args.max_header_entries, args.s)
         except HttpError, e:
             print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
-    else:
-        try:
-            uploadsPlaylist = GetYoutubeUploadsPlaylistByChannelId(channelId)
-        except HttpError, e:
-            print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
+    else :
+        if not channelId:
+            try:
+                uploadsPlaylist = GetYoutubeUploadsPlaylistByUsername(userId)
+            except HttpError, e:
+                print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
+        else:
+            try:
+                uploadsPlaylist = GetYoutubeUploadsPlaylistByChannelId(channelId)
+            except HttpError, e:
+                print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
 
-    try:
-        (nr_entries, header_entries) = GetYoutubeVideosFromPlaylist(uploadsPlaylist,
-            args.max_header_entries)
-    except HttpError, e:
-        print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
+        try:
+            (nr_entries, header_entries) = GetYoutubeVideosFromPlaylist(uploadsPlaylist,
+                args.max_header_entries, args.s)
+        except HttpError, e:
+            print "An HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
 
     # Fetch geeklist from boardgamegeek.com
-    subprocess.call(["rm", "-f", "geeklist.xml"])
-    subprocess.call(["wget", "-O", "geeklist.xml",
-            "https://www.boardgamegeek.com/xmlapi/geeklist/" +
-            geeklistId + "?comments=0"])
+    count = 0
+    while True:
+        subprocess.call(["rm", "-f", "geeklist.xml"])
+        subprocess.call(["wget", "-O", "geeklist.xml",
+             "https://www.boardgamegeek.com/xmlapi2/geeklist/" +
+                geeklistId + "?comments=0"])
+        if not 'Please try again later for access.' in \
+            open('geeklist.xml').read():
+            break
+        count += 1
+        print "Try #" + str(count) + " failed"
+        if args.autoretry is False:
+            try:
+                cont=raw_input('Retry fetching geeklist?[(Y)es/(n)o]')
+            except ValueError:
+                    print "Not a character"
+            if cont == "n":
+                # Abandon all hope, quit trying to fetch the geeklist
+                quit()
+
     subprocess.call(["dos2unix", "geeklist.xml"])
 
     # Extract description from geeklist.xml
